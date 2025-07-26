@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dronify - AI Drone Controller</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚁 Dronify</h1>
+            <p>AI-Powered Drone Controller</p>
+            <div id="status" class="status">
+                <span id="connection-status">Checking connection...</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Video Feed Section -->
+            <section class="video-section">
+                <h2>Live Camera Feed</h2>
+                <div class="video-container">
+                    <img id="video-feed" src="/video_feed" alt="Drone camera feed" onerror="showVideoError()">
+                    <div id="video-error" class="error-message" style="display: none;">
+                        Camera feed unavailable. Make sure the drone simulator is running.
+                    </div>
+                </div>
+            </section>
+
+            <!-- Control Panels -->
+            <div class="control-panels">
+                <!-- Text Commands -->
+                <section class="control-panel">
+                    <h3>Text Commands</h3>
+                    <div class="command-input">
+                        <input type="text" id="text-command" placeholder="Enter command (e.g., 'take off', 'move forward')" />
+                        <button onclick="sendTextCommand()">Send Command</button>
+                    </div>
+                    <div class="quick-commands">
+                        <h4>Quick Commands:</h4>
+                        <div class="button-grid">
+                            <button onclick="sendQuickCommand('initialize')">Initialize</button>
+                            <button onclick="sendQuickCommand('take off')">Take Off</button>
+                            <button onclick="sendQuickCommand('land')">Land</button>
+                            <button onclick="sendQuickCommand('hover')">Hover</button>
+                            <button onclick="sendQuickCommand('move forward')">Forward</button>
+                            <button onclick="sendQuickCommand('move back')">Back</button>
+                            <button onclick="sendQuickCommand('move left')">Left</button>
+                            <button onclick="sendQuickCommand('move right')">Right</button>
+                            <button onclick="sendQuickCommand('move up')">Up</button>
+                            <button onclick="sendQuickCommand('move down')">Down</button>
+                            <button onclick="sendQuickCommand('rotate left')">Rotate Left</button>
+                            <button onclick="sendQuickCommand('rotate right')">Rotate Right</button>
+                            <button onclick="sendQuickCommand('get status')">Get Status</button>
+                            <button onclick="sendQuickCommand('reset')">Reset</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Voice Commands -->
+                <section class="control-panel">
+                    <h3>Voice Commands</h3>
+                    <div class="voice-controls">
+                        <button id="record-btn" onclick="toggleRecording()">🎤 Start Recording</button>
+                        <div id="recording-status" style="display: none;">
+                            <span class="recording-indicator">● Recording...</span>
+                        </div>
+                        <p class="help-text">Click to start recording, speak your command, then click again to stop and send.</p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Response Log -->
+            <section class="response-log">
+                <h3>Command Log</h3>
+                <div id="log-container">
+                    <div class="log-entry welcome">
+                        <div class="log-time">Welcome</div>
+                        <div class="log-content">Dronify controller ready. Use text or voice commands to control your drone.</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

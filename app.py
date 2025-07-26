@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template, send_from_directory
 from airsim_controller import AirSimController
 import sys
 import os
@@ -10,9 +10,9 @@ from pydub import AudioSegment
 
 # --- Initialization ---
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
-MODEL_PATH = "model"
+MODEL_PATH = "/home/skywolfmo/github/dronify/model/vosk-model-small-en-us-0.15"
 if not os.path.exists(MODEL_PATH):
     print(f"Vosk model not found at '{MODEL_PATH}'. Please download and place it there.", file=sys.stderr)
     sys.exit(1)
@@ -145,7 +145,37 @@ def handle_command():
 @app.route('/', methods=['GET'])
 def index():
     """
-    A simple health-check/info endpoint.
+    Serve the web interface if accessed via browser, otherwise return API info.
+    """
+    # Check if the request is from a browser (looking for HTML)
+    if 'text/html' in request.headers.get('Accept', ''):
+        return send_from_directory('static', 'index.html')
+    
+    # Otherwise, return API info as JSON
+    connection_status = "Connected" if drone_controller.is_connected else "Not Connected"
+    return jsonify({
+        "service": "AirSim Control API",
+        "status": "running",
+        "airsim_connection": connection_status,
+        "endpoints": {
+            "/command": "Accepts JSON POST requests for text commands.",
+            "/audio_command": "Accepts multipart/form-data POST requests with an 'audio' file.",
+            "/video_feed": "Provides a live MJPEG stream from the drone's camera.",
+            "/web": "Web interface for drone control."
+        }
+    })
+
+@app.route('/web')
+def web_interface():
+    """
+    Explicitly serve the web interface.
+    """
+    return send_from_directory('static', 'index.html')
+
+@app.route('/api/status')
+def api_status():
+    """
+    API endpoint specifically for status information.
     """
     connection_status = "Connected" if drone_controller.is_connected else "Not Connected"
     return jsonify({

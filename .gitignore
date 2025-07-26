@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+model/
+# Web assets - keep static files
+!static/
+
 # Distribution / packaging
 .Python
 build/
