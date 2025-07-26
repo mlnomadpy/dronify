@@ -1,8 +1,8 @@
+numpy
 flask
-airsim-client
+airsim
 vosk
 transformers
 torch
 pydub
 opencv-python-headless
-numpy
