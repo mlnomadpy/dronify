@@ -1,0 +1,8 @@
+flask
+airsim-client
+vosk
+transformers
+torch
+pydub
+opencv-python-headless
+numpy
