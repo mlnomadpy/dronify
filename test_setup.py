@@ -9,6 +9,15 @@ import sys
 import os
 import subprocess
 import socket
+import openai
+
+# Replace this with your Bright Data API endpoint
+BRIGHTDATA_PROXY_API_BASE = "https://proxy.brightdata.com/openai"
+BRIGHTDATA_API_KEY = "YOUR_BRIGHTDATA_API_KEY"  # Put your real key here or use env var
+
+# Configure OpenAI SDK to use Bright Data's proxy
+openai.api_base = BRIGHTDATA_PROXY_API_BASE
+openai.api_key = BRIGHTDATA_API_KEY  # Bright Data expects key in the same format
 
 def test_wsl_detection():
     """Test if WSL environment is detected correctly."""
