@@ -185,7 +185,9 @@ class AirSimController:
         
         try:
             self.client = airsim.MultirotorClient(ip=host_ip)
+            print("recon")
             self.client.confirmConnection()
+            print("recon")
             self.client.getMultirotorState()
             self.is_connected = True
             self.host_ip = host_ip
@@ -262,6 +264,15 @@ class AirSimController:
             return None
             
         try:
+            # Force refresh connection if we haven't gotten a successful image in a while
+            if hasattr(self, '_camera_error_count') and self._camera_error_count > 20:
+                try:
+                    # Try to refresh the client connection
+                    self.client.confirmConnection()
+                    self._camera_error_count = 0
+                except:
+                    pass
+            
             # Use synchronous method to avoid IOLoop conflicts
             responses = self.client.simGetImages([airsim.ImageRequest(camera_name, airsim.ImageType.Scene, False, False)])
             
@@ -309,10 +320,14 @@ class AirSimController:
                 return None
 
             # Encode the BGR image to a JPEG format in memory
-            ret, buffer = cv2.imencode('.jpg', img_bgr)
+            ret, buffer = cv2.imencode('.jpg', img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
             if not ret:
                 # print("Error: Failed to encode image to JPEG", file=sys.stderr)
                 return None
+            
+            # Reset error count on successful image
+            if hasattr(self, '_camera_error_count'):
+                self._camera_error_count = 0
             
             # Return the JPEG image as a byte string
             return buffer.tobytes()

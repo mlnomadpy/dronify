@@ -6,3 +6,4 @@ transformers
 torch
 pydub
 opencv-python-headless
+msgpack-rpc-python
