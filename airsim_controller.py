@@ -6,7 +6,29 @@ import subprocess
 from transformers import pipeline
 import numpy as np
 import cv2
+import torch
+from mastra import load_model_and_preprocess
+from PIL import Image
+import requests
+from torchvision import transforms
 
+# Load model
+model, image_transform, tokenizer = load_model_and_preprocess("mastra-base")
+
+# Load example image
+image = Image.open(requests.get("https://raw.githubusercontent.com/mastra-ai/mastra/main/assets/demo.png", stream=True).raw)
+
+# Transform image
+image_tensor = image_transform(image).unsqueeze(0).to(model.device)
+
+# Example command
+query = "Which objects should I avoid while landing?"
+
+# Inference
+with torch.no_grad():
+    output = model(image_tensor, query)
+    print("Mastra Response:")
+    print(output)
 class AirSimController:
     """
     A controller class to manage all interactions with the AirSim drone,
