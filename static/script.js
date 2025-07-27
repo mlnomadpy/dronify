@@ -2,15 +2,49 @@
 let isRecording = false;
 let mediaRecorder;
 let audioChunks = [];
+let videoRetryCount = 0;
+let maxVideoRetries = 3;
+let videoFeedCheckInterval;
 
 // Initialize the app when the page loads
 document.addEventListener('DOMContentLoaded', function() {
     checkConnectionStatus();
     setupEventListeners();
+    initializeVideoFeed();
     
     // Check connection status every 30 seconds
     setInterval(checkConnectionStatus, 30000);
+    
+    // Monitor video feed health every 10 seconds
+    videoFeedCheckInterval = setInterval(checkVideoFeedHealth, 10000);
 });
+
+// Initialize video feed monitoring
+function initializeVideoFeed() {
+    const videoFeed = document.getElementById('video-feed');
+    
+    // Update video resolution info when image loads
+    videoFeed.onload = function() {
+        hideVideoError();
+        updateVideoInfo(this.naturalWidth, this.naturalHeight);
+        updateFeedStatus('LIVE', false);
+        videoRetryCount = 0; // Reset retry count on successful load
+    };
+    
+    // Handle video feed errors
+    videoFeed.onerror = function() {
+        showVideoError();
+        updateFeedStatus('ERROR', true);
+        
+        // Auto-retry after delay
+        if (videoRetryCount < maxVideoRetries) {
+            setTimeout(() => {
+                videoRetryCount++;
+                refreshVideoFeed();
+            }, 3000 + (videoRetryCount * 2000)); // Increasing delay
+        }
+    };
+}
 
 // Set up event listeners
 function setupEventListeners() {
@@ -18,6 +52,13 @@ function setupEventListeners() {
     document.getElementById('text-command').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             sendTextCommand();
+        }
+    });
+    
+    // Enter key for host IP input
+    document.getElementById('host-ip-input').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            reconnectAirSim();
         }
     });
 }
@@ -28,21 +69,31 @@ async function checkConnectionStatus() {
         const response = await fetch('/api/status');
         if (response.ok) {
             const data = await response.json();
-            updateConnectionStatus(data.airsim_connection === 'Connected', data.airsim_connection);
+            const isConnected = data.airsim_connection === 'Connected';
+            updateConnectionStatus(isConnected, data.airsim_connection, data.airsim_host);
         } else {
-            updateConnectionStatus(false, 'API Error');
+            updateConnectionStatus(false, 'API Error', 'Unknown');
         }
     } catch (error) {
-        updateConnectionStatus(false, 'Connection Failed');
+        updateConnectionStatus(false, 'Connection Failed', 'Unknown');
     }
 }
 
 // Update connection status display
-function updateConnectionStatus(isConnected, statusText) {
+function updateConnectionStatus(isConnected, statusText, hostIp) {
     const statusElement = document.getElementById('connection-status');
     const statusContainer = document.getElementById('status');
+    const hostInfo = document.getElementById('host-info');
+    const airSimHost = document.getElementById('airsim-host');
     
     statusElement.textContent = statusText;
+    
+    if (hostIp && hostIp !== 'Unknown') {
+        airSimHost.textContent = hostIp;
+        hostInfo.style.display = 'block';
+    } else {
+        hostInfo.style.display = 'none';
+    }
     
     if (isConnected) {
         statusContainer.className = 'status connected';
@@ -51,10 +102,91 @@ function updateConnectionStatus(isConnected, statusText) {
     }
 }
 
+// Reconnect to AirSim
+async function reconnectAirSim() {
+    const hostInput = document.getElementById('host-ip-input');
+    const hostIp = hostInput.value.trim();
+    
+    addLogEntry('info', 'Reconnecting', 'Attempting to reconnect to AirSim...');
+    
+    try {
+        const response = await fetch('/reconnect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ host_ip: hostIp || null })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.status === 'success') {
+            addLogEntry('success', 'Reconnection', `Successfully connected to AirSim at ${result.host_ip}`);
+            // Clear the input field on successful connection
+            hostInput.value = '';
+            // Refresh connection status
+            checkConnectionStatus();
+        } else {
+            addLogEntry('error', 'Reconnection', result.message || 'Failed to reconnect to AirSim');
+        }
+    } catch (error) {
+        addLogEntry('error', 'Reconnection', `Network error: ${error.message}`);
+    }
+}
+
 // Show video error message
 function showVideoError() {
     document.getElementById('video-feed').style.display = 'none';
-    document.getElementById('video-error').style.display = 'block';
+    document.getElementById('video-error').style.display = 'flex';
+}
+
+// Hide video error message
+function hideVideoError() {
+    document.getElementById('video-feed').style.display = 'block';
+    document.getElementById('video-error').style.display = 'none';
+}
+
+// Refresh video feed
+function refreshVideoFeed() {
+    const videoFeed = document.getElementById('video-feed');
+    const timestamp = new Date().getTime();
+    
+    // Add timestamp to prevent caching issues
+    videoFeed.src = `/video_feed?t=${timestamp}`;
+    
+    updateFeedStatus('CONNECTING...', false);
+    addLogEntry('info', 'Video Feed', 'Refreshing camera feed...');
+}
+
+// Update video feed status
+function updateFeedStatus(statusText, isError) {
+    const statusTextElement = document.getElementById('feed-status-text');
+    const indicator = document.getElementById('feed-indicator');
+    
+    statusTextElement.textContent = statusText;
+    
+    if (isError) {
+        indicator.classList.add('error');
+    } else {
+        indicator.classList.remove('error');
+    }
+}
+
+// Update video information
+function updateVideoInfo(width, height) {
+    const videoResolution = document.getElementById('video-resolution');
+    videoResolution.textContent = `${width} × ${height}`;
+}
+
+// Check video feed health
+function checkVideoFeedHealth() {
+    const videoFeed = document.getElementById('video-feed');
+    const videoError = document.getElementById('video-error');
+    
+    // If error is showing and we haven't exceeded retry limit, try refreshing
+    if (videoError.style.display !== 'none' && videoRetryCount < maxVideoRetries) {
+        refreshVideoFeed();
+    }
 }
 
 // Send text command

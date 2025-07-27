@@ -28,11 +28,27 @@
         <main>
             <!-- Video Feed Section -->
             <section class="video-section">
-                <h2>Live Camera Feed</h2>
+                <h2>🎥 Live Camera Feed</h2>
                 <div class="video-container">
-                    <img id="video-feed" src="/video_feed" alt="Drone camera feed" onerror="showVideoError()">
+                    <img id="video-feed" src="/video_feed" alt="Drone camera feed" 
+                         onerror="showVideoError()" onload="hideVideoError()">
                     <div id="video-error" class="error-message" style="display: none;">
-                        Camera feed unavailable. Make sure the drone simulator is running.
+                        <div class="error-content">
+                            <h3>📷 Camera Feed Unavailable</h3>
+                            <p>Make sure the drone simulator is running and connected.</p>
+                            <button onclick="refreshVideoFeed()" class="retry-btn">🔄 Retry</button>
+                        </div>
+                    </div>
+                    <div class="video-overlay">
+                        <div class="video-controls">
+                            <div class="feed-status" id="feed-status">
+                                <span class="status-indicator" id="feed-indicator">●</span>
+                                <span id="feed-status-text">LIVE</span>
+                            </div>
+                            <div class="video-info">
+                                <small id="video-resolution">Loading...</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

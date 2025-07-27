@@ -47,12 +47,45 @@ Dronify is a Flask-based REST API for controlling a multirotor drone in the AirS
 
 ## Running Dronify
 
+### Option 1: Quick Start (WSL/Linux)
+
+Use the provided startup script that handles WSL detection and network configuration:
+
+```sh
+./start_dronify.sh
+```
+
+### Option 2: Manual Start
+
 1. **Start the AirSim simulator.**
-2. **Run the Flask API server:**
+2. **For WSL users**: Set the Windows host IP (if needed):
+   ```sh
+   export AIRSIM_HOST="172.20.240.1"  # Replace with your Windows IP
+   ```
+3. **Run the Flask API server:**
    ```sh
    python app.py
    ```
    The server may take a moment to load speech and language models.
+
+### Web Interface
+
+Open your browser and navigate to [http://localhost:5000](http://localhost:5000) for the web interface that includes:
+
+- Live drone camera feed
+- Text command input with quick action buttons
+- Voice command recording
+- Real-time command log
+- AirSim connection status and reconnect functionality
+
+## WSL Setup
+
+If you're running Python in WSL with AirSim on Windows, see the detailed [WSL Setup Guide](WSL_SETUP.md) for:
+
+- Network configuration between WSL and Windows
+- Firewall setup instructions
+- Troubleshooting connectivity issues
+- Advanced configuration options
 
 ## API Usage
 

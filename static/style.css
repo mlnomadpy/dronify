@@ -53,6 +53,60 @@ header p {
     background: rgba(244, 67, 54, 0.3);
 }
 
+.host-info {
+    margin-top: 5px;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.reconnect-section {
+    text-align: center;
+}
+
+.reconnect-input {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.reconnect-input input {
+    padding: 8px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 14px;
+    min-width: 200px;
+}
+
+.reconnect-input input::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.reconnect-input input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.reconnect-btn {
+    background: #ff9800;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.reconnect-btn:hover {
+    background: #f57c00;
+}
+
 main {
     padding: 30px;
 }
@@ -74,21 +128,116 @@ main {
     position: relative;
     max-width: 800px;
     margin: 0 auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    border: 2px solid #333;
 }
 
 #video-feed {
     width: 100%;
     height: auto;
     display: block;
+    min-height: 300px;
+    object-fit: cover;
+}
+
+.video-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%);
+    padding: 15px;
+    z-index: 10;
+}
+
+.video-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.feed-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 8px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.status-indicator {
+    font-size: 12px;
+    color: #4CAF50;
+    animation: pulse-dot 2s infinite;
+}
+
+.status-indicator.error {
+    color: #f44336;
+    animation: none;
+}
+
+@keyframes pulse-dot {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0.3; }
+}
+
+.video-info {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 8px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 12px;
 }
 
 .error-message {
-    background: #f44336;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
     color: white;
-    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    z-index: 20;
+}
+
+.error-content {
     text-align: center;
-    border-radius: 5px;
-    margin: 10px;
+    padding: 20px;
+}
+
+.error-content h3 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    color: #ff6b6b;
+}
+
+.error-content p {
+    margin-bottom: 20px;
+    opacity: 0.8;
+}
+
+.retry-btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 25px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.retry-btn:hover {
+    background: #45a049;
+    transform: translateY(-2px);
 }
 
 .control-panels {
