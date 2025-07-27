@@ -6,6 +6,13 @@ Run this to diagnose camera issues.
 
 import sys
 import os
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.llms import OpenAI
+import os
+
+# You can also use dotenv for key management
+os.environ["OPENAI_API_KEY"] = "your_openai_api_key"  # Replace with your key or use dotenv
+
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
