@@ -1,6 +1,6 @@
-# Dronify
+# Black Swan
 
-Dronify is a Flask-based REST API for controlling a multirotor drone in the AirSim simulator. It translates both text and audio commands into drone actions and streams live video from the drone’s camera.
+Black Swan is a Flask-based REST API for controlling a multirotor drone in the AirSim simulator. It translates both text and audio commands into drone actions and streams live video from the drone’s camera.
 
 ## Key Features
 
