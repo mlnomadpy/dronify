@@ -215,7 +215,7 @@ class AirSimController:
         
         print(f"Interpretation result: '{best_match}' with confidence {confidence:.2f}")
 
-        if confidence > 0.70:
+        if confidence > 0.20:
             return best_match
         else:
             print("Interpretation confidence too low, command ignored.")

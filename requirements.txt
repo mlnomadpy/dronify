@@ -1,7 +1,8 @@
 numpy
 flask
 airsim
-vosk
+SpeechRecognition
+pocketsphinx
 transformers
 torch
 pydub

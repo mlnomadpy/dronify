@@ -5,21 +5,12 @@ import os
 import wave
 import json
 import time
-from vosk import Model, KaldiRecognizer
+import speech_recognition as sr
 from pydub import AudioSegment
 
 # --- Initialization ---
 
 app = Flask(__name__, static_folder='static', static_url_path='/static', template_folder='templates')
-
-MODEL_PATH = "/home/skywolfmo/github/dronify/model/vosk-model-small-en-us-0.15"
-if not os.path.exists(MODEL_PATH):
-    print(f"Vosk model not found at '{MODEL_PATH}'. Please download and place it there.", file=sys.stderr)
-    sys.exit(1)
-    
-print("Loading speech recognition model...")
-vosk_model = Model(MODEL_PATH)
-print("Speech recognition model loaded.")
 
 print("Initializing AirSim Controller...")
 # Check if user wants to specify a custom AirSim host IP
@@ -34,21 +25,88 @@ else:
 
 def transcribe_audio(audio_path):
     """
-    Transcribes an audio file to text using the Vosk model.
+    Transcribes an audio file to text using the SpeechRecognition library.
     """
     try:
-        sound = AudioSegment.from_file(audio_path)
-        sound = sound.set_channels(1)
-        sound = sound.set_frame_rate(16000)
+        print(f"Transcribing audio file: {audio_path}")
         
-        rec = KaldiRecognizer(vosk_model, sound.frame_rate)
-        rec.SetWords(True)
-        rec.AcceptWaveform(sound.raw_data)
-        result = rec.FinalResult()
-        text = json.loads(result).get("text", "")
-        return text
+        # Check if file exists
+        if not os.path.exists(audio_path):
+            print(f"Error: Audio file {audio_path} does not exist")
+            return None
+            
+        # Initialize recognizer
+        recognizer = sr.Recognizer()
+        
+        # Load and process audio
+        sound = AudioSegment.from_file(audio_path)
+        print(f"Original audio: {len(sound)}ms, {sound.frame_rate}Hz, {sound.channels} channels")
+        
+        # Convert to mono and normalize
+        sound = sound.set_channels(1)
+        sound = sound.normalize()
+        
+        # Apply some noise reduction (simple high-pass filter)
+        if len(sound) > 0:
+            sound = sound.high_pass_filter(80)  # Remove very low frequencies
+        
+        print(f"Processed audio: {len(sound)}ms, {sound.frame_rate}Hz, {sound.channels} channels")
+        
+        # Check if audio is too short
+        if len(sound) < 200:  # Less than 200ms
+            print("Error: Audio too short for transcription")
+            return None
+        
+        # Convert to WAV format for SpeechRecognition
+        wav_path = audio_path + "_temp.wav"
+        sound.export(wav_path, format="wav")
+        
+        # Use SpeechRecognition to transcribe
+        with sr.AudioFile(wav_path) as source:
+            # Adjust for ambient noise
+            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            audio_data = recognizer.record(source)
+        
+        # Clean up temporary file
+        os.remove(wav_path)
+        
+        # Try multiple recognition engines for better accuracy
+        recognized_text = None
+        
+        # Try Google Web Speech API first (most accurate but requires internet)
+        try:
+            print("Attempting Google Web Speech API...")
+            recognized_text = recognizer.recognize_google(audio_data)
+            print(f"Google result: '{recognized_text}'")
+        except sr.UnknownValueError:
+            print("Google Web Speech API could not understand audio")
+        except sr.RequestError as e:
+            print(f"Google Web Speech API error: {e}")
+        
+        # If Google fails, try offline Sphinx as fallback
+        if not recognized_text:
+            try:
+                print("Attempting offline Sphinx recognition...")
+                recognized_text = recognizer.recognize_sphinx(audio_data)
+                print(f"Sphinx result: '{recognized_text}'")
+            except sr.UnknownValueError:
+                print("Sphinx could not understand audio")
+            except sr.RequestError as e:
+                print(f"Sphinx error: {e}")
+        
+        # Clean up the recognized text
+        if recognized_text:
+            recognized_text = recognized_text.strip()
+            print(f"Final transcription: '{recognized_text}'")
+        else:
+            print("No transcription could be generated")
+        
+        return recognized_text if recognized_text else None
+        
     except Exception as e:
-        print(f"Error during transcription: {e}", file=sys.stderr)
+        print(f"Error during transcription: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def generate_frames():
@@ -58,6 +116,7 @@ def generate_frames():
     """
     consecutive_failures = 0
     max_consecutive_failures = 10
+    last_successful_time = time.time()
     
     while True:
         # Control the frame rate to avoid overwhelming the server or client.
@@ -68,7 +127,17 @@ def generate_frames():
             frame = drone_controller.get_camera_image()
             if frame is None:
                 consecutive_failures += 1
-                print(f"Warning: Failed to get camera frame (attempt {consecutive_failures})")
+                # print(f"Warning: Failed to get camera frame (attempt {consecutive_failures})")
+                
+                # If it's been too long since last successful frame, check connection
+                if time.time() - last_successful_time > 30:  # 30 seconds
+                    try:
+                        # Try to refresh the AirSim connection
+                        drone_controller.client.confirmConnection()
+                        print("Refreshed AirSim connection for camera feed")
+                        last_successful_time = time.time()
+                    except:
+                        pass
                 
                 if consecutive_failures >= max_consecutive_failures:
                     print("Error: Too many consecutive camera failures, breaking stream")
@@ -79,6 +148,7 @@ def generate_frames():
             else:
                 # Reset failure counter on successful frame
                 consecutive_failures = 0
+                last_successful_time = time.time()
             
             # Yield the frame in the multipart format. Each frame is a self-contained JPEG.
             yield (b'--frame\r\n'
@@ -152,6 +222,97 @@ def video_status():
         "frame_size": len(test_frame)
     })
 
+@app.route('/refresh_camera', methods=['POST'])
+def refresh_camera():
+    """
+    Endpoint to refresh the camera connection.
+    """
+    if not drone_controller.is_connected:
+        return jsonify({
+            "status": "error",
+            "message": "AirSim simulator not connected"
+        }), 503
+    
+    try:
+        # Reset camera error count
+        if hasattr(drone_controller, '_camera_error_count'):
+            drone_controller._camera_error_count = 0
+        
+        # Try to refresh the connection
+        drone_controller.client.confirmConnection()
+        
+        # Test camera immediately
+        test_frame = drone_controller.get_camera_image()
+        
+        if test_frame:
+            return jsonify({
+                "status": "success",
+                "message": "Camera connection refreshed successfully",
+                "frame_size": len(test_frame)
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Camera refresh failed - no image received"
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to refresh camera: {e}"
+        }), 500
+
+@app.route('/debug/audio', methods=['POST'])
+def debug_audio():
+    """
+    Debug endpoint to test audio transcription without command interpretation.
+    """
+    if 'audio' not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
+    
+    audio_file = request.files['audio']
+    if audio_file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    # Save temporary file
+    temp_path = "debug_audio_temp"
+    try:
+        audio_file.save(temp_path)
+        
+        # Get file info
+        file_size = os.path.getsize(temp_path)
+        
+        # Load audio for analysis
+        sound = AudioSegment.from_file(temp_path)
+        
+        # Transcribe
+        transcribed_text = transcribe_audio(temp_path)
+        
+        # Clean up
+        os.remove(temp_path)
+        
+        debug_info = {
+            "file_info": {
+                "filename": audio_file.filename,
+                "size_bytes": file_size,
+                "duration_ms": len(sound),
+                "sample_rate": sound.frame_rate,
+                "channels": sound.channels
+            },
+            "transcription": {
+                "success": transcribed_text is not None,
+                "text": transcribed_text or "",
+                "length": len(transcribed_text) if transcribed_text else 0
+            }
+        }
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({"error": f"Debug failed: {str(e)}"}), 500
+
 @app.route('/debug/camera')
 def debug_camera():
     """
@@ -208,36 +369,69 @@ def handle_audio_command():
         return jsonify({"status": "error", "message": "Cannot process command, AirSim simulator is not connected."}), 503
 
     if 'audio' not in request.files:
+        print("Error: No audio file in request")
         return jsonify({"status": "error", "message": "No audio file found in the request."}), 400
 
     audio_file = request.files['audio']
     if audio_file.filename == '':
+        print("Error: Empty audio filename")
         return jsonify({"status": "error", "message": "No selected file."}), 400
 
+    print(f"Received audio file: {audio_file.filename}, size: {len(audio_file.read())} bytes")
+    audio_file.seek(0)  # Reset file pointer after reading
+
     temp_path = "temp_audio_command"
-    audio_file.save(temp_path)
+    try:
+        audio_file.save(temp_path)
+        print(f"Audio file saved to {temp_path}")
+        
+        # Check if file was saved properly
+        if not os.path.exists(temp_path):
+            print("Error: Failed to save audio file")
+            return jsonify({"status": "error", "message": "Failed to save audio file."}), 500
+            
+        file_size = os.path.getsize(temp_path)
+        print(f"Saved audio file size: {file_size} bytes")
+        
+        if file_size == 0:
+            print("Error: Saved audio file is empty")
+            os.remove(temp_path)
+            return jsonify({"status": "error", "message": "Audio file is empty."}), 400
 
-    transcribed_text = transcribe_audio(temp_path)
-    os.remove(temp_path)
+        transcribed_text = transcribe_audio(temp_path)
+        os.remove(temp_path)
+        
+        print(f"Transcription result: '{transcribed_text}'")
 
-    if not transcribed_text:
-        return jsonify({"status": "error", "message": "Could not understand audio or audio was empty."}), 400
+        if not transcribed_text or transcribed_text.strip() == "":
+            print("Error: Transcription returned empty or None")
+            return jsonify({"status": "error", "message": "Could not understand audio or audio was empty."}), 400
 
-    command = drone_controller.interpret_text_command(transcribed_text)
+        command = drone_controller.interpret_text_command(transcribed_text)
+        print(f"Interpreted command: '{command}'")
 
-    if not command:
-        return jsonify({
-            "status": "error",
-            "message": "Failed to map your speech to a known command.",
-            "transcribed_text": transcribed_text
-        }), 400
+        if not command:
+            print("Error: Failed to interpret command")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to map your speech to a known command.",
+                "transcribed_text": transcribed_text
+            }), 400
 
-    response = drone_controller.execute_command(command)
-    response['transcribed_text'] = transcribed_text
-    response['interpreted_command'] = command
-    
-    status_code = 200 if response.get('status') == 'success' else 500
-    return jsonify(response), status_code
+        response = drone_controller.execute_command(command)
+        response['transcribed_text'] = transcribed_text
+        response['interpreted_command'] = command
+        
+        print(f"Command execution result: {response}")
+        
+        status_code = 200 if response.get('status') == 'success' else 500
+        return jsonify(response), status_code
+        
+    except Exception as e:
+        print(f"Error processing audio command: {e}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({"status": "error", "message": f"Error processing audio: {str(e)}"}), 500
 
 @app.route('/command', methods=['POST'])
 def handle_command():
