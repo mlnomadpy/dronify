@@ -433,6 +433,103 @@ def handle_audio_command():
             os.remove(temp_path)
         return jsonify({"status": "error", "message": f"Error processing audio: {str(e)}"}), 500
 
+@app.route('/vision_command', methods=['POST'])
+def handle_vision_command():
+    """
+    Endpoint to handle vision-guided commands that analyze the current camera feed
+    along with text commands to plan and execute drone actions.
+    """
+    if not drone_controller.is_connected:
+        return jsonify({"status": "error", "message": "Cannot process command, AirSim simulator is not connected."}), 503
+
+    if not drone_controller.vl_model_available:
+        return jsonify({"status": "error", "message": "Vision-language model is not available."}), 503
+
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid request: Content-Type must be application/json."}), 400
+
+    data = request.get_json()
+    command = data.get('command', None)
+    use_current_image = data.get('use_current_image', True)
+
+    if not command:
+        return jsonify({"status": "error", "message": "Invalid JSON payload: Missing 'command' key."}), 400
+
+    print(f"Received vision-guided command: '{command}'")
+    
+    try:
+        # Get current camera image if requested
+        image_data = None
+        if use_current_image:
+            image_data = drone_controller.get_camera_image()
+            if not image_data:
+                return jsonify({"status": "error", "message": "Could not capture camera image for vision analysis."}), 500
+        
+        # Execute vision-guided command
+        response = drone_controller.execute_vision_guided_command(command, image_data)
+        status_code = 200 if response.get('status') in ['success', 'partial'] else 500
+        return jsonify(response), status_code
+        
+    except Exception as e:
+        print(f"Error processing vision command: {e}")
+        return jsonify({"status": "error", "message": f"Error processing vision command: {str(e)}"}), 500
+
+@app.route('/audio_vision_command', methods=['POST'])
+def handle_audio_vision_command():
+    """
+    Endpoint to handle audio commands with vision-guided analysis.
+    Combines speech recognition with current camera feed analysis.
+    """
+    if not drone_controller.is_connected:
+        return jsonify({"status": "error", "message": "Cannot process command, AirSim simulator is not connected."}), 503
+
+    if not drone_controller.vl_model_available:
+        return jsonify({"status": "error", "message": "Vision-language model is not available."}), 503
+
+    if 'audio' not in request.files:
+        print("Error: No audio file in request")
+        return jsonify({"status": "error", "message": "No audio file found in the request."}), 400
+
+    audio_file = request.files['audio']
+    if audio_file.filename == '':
+        print("Error: Empty audio filename")
+        return jsonify({"status": "error", "message": "No selected file."}), 400
+
+    print(f"Received audio file for vision-guided command: {audio_file.filename}")
+
+    temp_path = "temp_audio_vision_command"
+    try:
+        audio_file.save(temp_path)
+        
+        # Transcribe audio to text
+        transcribed_text = transcribe_audio(temp_path)
+        os.remove(temp_path)
+        
+        if not transcribed_text or transcribed_text.strip() == "":
+            return jsonify({"status": "error", "message": "Could not understand audio or audio was empty."}), 400
+
+        print(f"Transcribed text for vision command: '{transcribed_text}'")
+        
+        # Get current camera image
+        image_data = drone_controller.get_camera_image()
+        if not image_data:
+            return jsonify({"status": "error", "message": "Could not capture camera image for vision analysis."}), 500
+        
+        # Execute vision-guided command
+        response = drone_controller.execute_vision_guided_command(transcribed_text, image_data)
+        response['transcribed_text'] = transcribed_text
+        
+        print(f"Vision-guided command execution result: {response}")
+        
+        status_code = 200 if response.get('status') in ['success', 'partial'] else 500
+        return jsonify(response), status_code
+        
+    except Exception as e:
+        print(f"Error processing audio vision command: {e}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({"status": "error", "message": f"Error processing audio vision command: {str(e)}"}), 500
+
 @app.route('/command', methods=['POST'])
 def handle_command():
     """
@@ -499,15 +596,21 @@ def api_status():
         test_frame = drone_controller.get_camera_image()
         video_working = test_frame is not None
     
+    # Check vision-language model status
+    vl_model_status = getattr(drone_controller, 'vl_model_available', False)
+    
     return jsonify({
         "service": "AirSim Control API",
         "status": "running",
         "airsim_connection": connection_status,
         "airsim_host": host_ip,
         "video_feed_working": video_working,
+        "vision_language_model": vl_model_status,
         "endpoints": {
             "/command": "Accepts JSON POST requests for text commands.",
             "/audio_command": "Accepts multipart/form-data POST requests with an 'audio' file.",
+            "/vision_command": "Accepts JSON POST requests for vision-guided text commands.",
+            "/audio_vision_command": "Accepts multipart/form-data POST requests with an 'audio' file for vision-guided commands.",
             "/video_feed": "Provides a live MJPEG stream from the drone's camera.",
             "/video_status": "Check video feed status.",
             "/reconnect": "POST endpoint to reconnect to AirSim with optional host IP."

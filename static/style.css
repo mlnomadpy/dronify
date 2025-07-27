@@ -223,6 +223,13 @@ main {
     opacity: 0.8;
 }
 
+.error-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
 .retry-btn {
     background: #4CAF50;
     color: white;
@@ -325,21 +332,59 @@ button:active {
     text-align: center;
 }
 
-#record-btn {
+.voice-button-group {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+#record-btn, #vision-record-btn {
     background: #ff5722;
     font-size: 16px;
     padding: 15px 30px;
     border-radius: 50px;
-    margin-bottom: 15px;
+    flex: 1;
+    max-width: 200px;
 }
 
-#record-btn:hover {
+#record-btn:hover, #vision-record-btn:hover {
     background: #e64a19;
 }
 
-#record-btn.recording {
+#vision-record-btn {
+    background: #9c27b0;
+}
+
+#vision-record-btn:hover {
+    background: #7b1fa2;
+}
+
+#record-btn.recording, #vision-record-btn.recording {
     background: #f44336;
     animation: pulse 1.5s infinite;
+}
+
+/* Vision command specific styles */
+.control-panel:has(#vision-command) h3 {
+    color: #9c27b0;
+}
+
+.control-panel:has(#vision-command) .button-grid button {
+    background: linear-gradient(45deg, #9c27b0, #673ab7);
+}
+
+.control-panel:has(#vision-command) .button-grid button:hover {
+    background: linear-gradient(45deg, #7b1fa2, #512da8);
+}
+
+#vision-command {
+    border-left: 4px solid #9c27b0;
+}
+
+#vision-command:focus {
+    border-color: #7b1fa2;
+    box-shadow: 0 0 10px rgba(156, 39, 176, 0.3);
 }
 
 @keyframes pulse {

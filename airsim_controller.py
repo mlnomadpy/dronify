@@ -3,9 +3,14 @@ import time
 import sys
 import os
 import subprocess
-from transformers import pipeline
+import io
+from transformers import pipeline, LlavaNextProcessor, LlavaNextForConditionalGeneration
 import numpy as np
 import cv2
+import torch
+from PIL import Image
+import json
+import re
 
 class AirSimController:
     """
@@ -47,21 +52,30 @@ class AirSimController:
                 print("You may need to run: New-NetFirewallRule -DisplayName 'AirSim' -Direction Inbound -Protocol TCP -LocalPort 41451 -Action Allow", file=sys.stderr)
 
         # --- Command and Model Setup ---
+        # Enhanced command map with parameterized actions
         self.command_map = {
             "initialize": self.initialize_drone,
             "take off": self.take_off,
+            "takeoff": self.take_off,
             "land": self.land,
-            "move forward": lambda: self.move_at_velocity(vx=5, duration=2),
-            "move back": lambda: self.move_at_velocity(vx=-5, duration=2),
-            "move left": lambda: self.move_at_velocity(vy=-5, duration=2),
-            "move right": lambda: self.move_at_velocity(vy=5, duration=2),
-            "move up": lambda: self.move_at_velocity(vz=-3, duration=2),
-            "move down": lambda: self.move_at_velocity(vz=3, duration=2),
-            "rotate left": lambda: self.rotate_at_rate(yaw_rate=-30, duration=2),
-            "rotate right": lambda: self.rotate_at_rate(yaw_rate=30, duration=2),
+            "move forward": lambda distance=5, duration=2: self.move_at_velocity(vx=distance, duration=duration),
+            "move backward": lambda distance=5, duration=2: self.move_at_velocity(vx=-distance, duration=duration),
+            "move back": lambda distance=5, duration=2: self.move_at_velocity(vx=-distance, duration=duration),
+            "move left": lambda distance=5, duration=2: self.move_at_velocity(vy=-distance, duration=duration),
+            "move right": lambda distance=5, duration=2: self.move_at_velocity(vy=distance, duration=duration),
+            "move up": lambda distance=3, duration=2: self.move_at_velocity(vz=-distance, duration=duration),
+            "move down": lambda distance=3, duration=2: self.move_at_velocity(vz=distance, duration=duration),
+            "rotate left": lambda angle=30, duration=2: self.rotate_at_rate(yaw_rate=-angle, duration=duration),
+            "rotate right": lambda angle=30, duration=2: self.rotate_at_rate(yaw_rate=angle, duration=duration),
             "hover": self.hover,
             "get status": self.get_status,
             "reset": self.reset_drone,
+            # New vision-guided actions
+            "navigate to": self.navigate_to_target,
+            "avoid obstacles": self.avoid_obstacles_and_move,
+            "search for": self.search_for_object,
+            "follow": self.follow_object,
+            "inspect": self.inspect_area,
         }
         
         self.candidate_labels = list(self.command_map.keys())
@@ -73,6 +87,34 @@ class AirSimController:
         except Exception as e:
             print(f"Failed to load language model: {e}", file=sys.stderr)
             self.classifier = None
+
+        # Initialize Vision-Language Model
+        print("Loading vision-language model...")
+        try:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            print(f"Using device: {self.device}")
+            
+            # Load LLaVA model
+            model_id = "llava-hf/llava-1.5-7b-hf"
+            self.vl_processor = LlavaNextProcessor.from_pretrained(model_id)
+            self.vl_model = LlavaNextForConditionalGeneration.from_pretrained(
+                model_id,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                low_cpu_mem_usage=True,
+                device_map="auto" if torch.cuda.is_available() else None
+            )
+            
+            if not torch.cuda.is_available():
+                self.vl_model.to(self.device)
+                
+            print("Vision-language model loaded successfully.")
+            self.vl_model_available = True
+        except Exception as e:
+            print(f"Failed to load vision-language model: {e}", file=sys.stderr)
+            print("Vision-guided commands will not be available.")
+            self.vl_processor = None
+            self.vl_model = None
+            self.vl_model_available = False
 
     def _is_wsl(self):
         """
@@ -220,6 +262,183 @@ class AirSimController:
         else:
             print("Interpretation confidence too low, command ignored.")
             return None
+
+    def analyze_scene_and_plan(self, text_command, image_data=None):
+        """
+        Uses vision-language model to analyze the current scene and plan drone actions.
+        
+        Args:
+            text_command (str): The natural language command from the user
+            image_data (bytes): JPEG image data from drone camera, if None will capture current frame
+            
+        Returns:
+            dict: Contains planned actions and reasoning
+        """
+        if not self.vl_model_available:
+            print("Vision-language model not available, falling back to text-only interpretation.")
+            return {"actions": [], "reasoning": "Vision analysis not available"}
+        
+        try:
+            # Get current camera image if not provided
+            if image_data is None:
+                image_data = self.get_camera_image()
+                if image_data is None:
+                    return {"actions": [], "reasoning": "Could not capture camera image"}
+            
+            # Convert image bytes to PIL Image
+            image = Image.open(io.BytesIO(image_data)).convert('RGB')
+            
+            # Create prompt for the vision-language model
+            prompt = f"""<image>
+USER: I'm controlling a drone and need to execute this command: "{text_command}"
+
+Based on what you can see in this drone camera view, provide a step-by-step action plan. Available drone actions are:
+- move forward [distance] [duration] 
+- move backward [distance] [duration]
+- move left [distance] [duration] 
+- move right [distance] [duration]
+- move up [distance] [duration]
+- move down [distance] [duration] 
+- rotate left [angle] [duration]
+- rotate right [angle] [duration]
+- hover
+- take off
+- land
+
+Respond in this JSON format:
+{{
+    "reasoning": "Brief analysis of what you see and why these actions are needed",
+    "actions": [
+        {{"action": "action_name", "parameters": {{"distance": 5, "duration": 2}}}},
+        {{"action": "hover", "parameters": {{}}}}
+    ],
+    "safety_concerns": "Any safety issues you notice",
+    "confidence": 0.85
+}}
+
+ASSISTANT: """
+
+            # Process with vision-language model
+            inputs = self.vl_processor(prompt, image, return_tensors="pt").to(self.device)
+            
+            with torch.no_grad():
+                output = self.vl_model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    do_sample=True,
+                    temperature=0.3,
+                    pad_token_id=self.vl_processor.tokenizer.eos_token_id
+                )
+            
+            # Decode response
+            response = self.vl_processor.decode(output[0], skip_special_tokens=True)
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                try:
+                    plan_data = json.loads(json_match.group())
+                    print(f"Vision-language planning result: {plan_data}")
+                    return plan_data
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse JSON response: {e}")
+                    print(f"Raw response: {response}")
+            
+            return {
+                "actions": [],
+                "reasoning": f"Could not parse model response: {response[:200]}...",
+                "safety_concerns": "Unknown",
+                "confidence": 0.0
+            }
+            
+        except Exception as e:
+            print(f"Error in vision-language analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"actions": [], "reasoning": f"Analysis failed: {str(e)}"}
+
+    def execute_vision_guided_command(self, text_command, image_data=None):
+        """
+        Execute a command using vision-language model planning.
+        
+        Args:
+            text_command (str): Natural language command
+            image_data (bytes): Optional image data, will capture if None
+            
+        Returns:
+            dict: Execution result
+        """
+        try:
+            print(f"Executing vision-guided command: '{text_command}'")
+            
+            # Analyze scene and create plan
+            plan = self.analyze_scene_and_plan(text_command, image_data)
+            
+            if not plan.get("actions"):
+                return {
+                    "status": "error",
+                    "message": "Could not generate action plan",
+                    "reasoning": plan.get("reasoning", "Unknown error")
+                }
+            
+            # Check safety concerns
+            safety_concerns = plan.get("safety_concerns", "")
+            if "danger" in safety_concerns.lower() or "unsafe" in safety_concerns.lower():
+                return {
+                    "status": "error", 
+                    "message": f"Safety concern detected: {safety_concerns}",
+                    "reasoning": plan.get("reasoning", "")
+                }
+            
+            # Execute planned actions
+            execution_results = []
+            for action_plan in plan["actions"]:
+                action_name = action_plan.get("action", "").lower()
+                parameters = action_plan.get("parameters", {})
+                
+                print(f"Executing action: {action_name} with parameters: {parameters}")
+                
+                # Map to our command system
+                if action_name in self.command_map:
+                    try:
+                        if parameters:
+                            # Try to pass parameters to the action
+                            result = self.command_map[action_name](**parameters)
+                        else:
+                            result = self.command_map[action_name]()
+                        execution_results.append(result)
+                    except TypeError:
+                        # Fallback if parameters don't match
+                        result = self.command_map[action_name]()
+                        execution_results.append(result)
+                else:
+                    execution_results.append({
+                        "status": "error",
+                        "message": f"Unknown action: {action_name}"
+                    })
+                
+                # Small delay between actions
+                time.sleep(0.5)
+            
+            # Check if all actions succeeded
+            all_success = all(r.get("status") == "success" for r in execution_results if r)
+            
+            return {
+                "status": "success" if all_success else "partial",
+                "message": f"Vision-guided command executed",
+                "original_command": text_command,
+                "reasoning": plan.get("reasoning", ""),
+                "planned_actions": plan["actions"],
+                "execution_results": execution_results,
+                "confidence": plan.get("confidence", 0.0)
+            }
+            
+        except Exception as e:
+            print(f"Error executing vision-guided command: {e}")
+            return {
+                "status": "error",
+                "message": f"Execution failed: {str(e)}"
+            }
 
     def execute_command(self, command):
         """
@@ -522,3 +741,71 @@ class AirSimController:
         self.is_initialized = False
         print("Drone has been reset.")
         return {"status": "success", "message": "Drone has been reset."}
+
+    # --- Vision-Guided Action Methods ---
+    
+    def navigate_to_target(self, target_description="target", **kwargs):
+        """
+        Navigate towards a target visible in the camera feed.
+        """
+        print(f"Navigating to: {target_description}")
+        
+        # Get current image and analyze
+        image_data = self.get_camera_image()
+        if not image_data:
+            return {"status": "error", "message": "Could not capture image for navigation"}
+        
+        command = f"Navigate towards the {target_description}"
+        return self.execute_vision_guided_command(command, image_data)
+    
+    def avoid_obstacles_and_move(self, direction="forward", **kwargs):
+        """
+        Move in specified direction while avoiding obstacles.
+        """
+        print(f"Moving {direction} while avoiding obstacles")
+        
+        image_data = self.get_camera_image()
+        if not image_data:
+            return {"status": "error", "message": "Could not capture image for obstacle avoidance"}
+        
+        command = f"Move {direction} while carefully avoiding any obstacles you can see"
+        return self.execute_vision_guided_command(command, image_data)
+    
+    def search_for_object(self, object_name="object", **kwargs):
+        """
+        Search for a specific object by rotating and moving.
+        """
+        print(f"Searching for: {object_name}")
+        
+        image_data = self.get_camera_image()
+        if not image_data:
+            return {"status": "error", "message": "Could not capture image for search"}
+        
+        command = f"Search for {object_name} by rotating and moving to get a better view"
+        return self.execute_vision_guided_command(command, image_data)
+    
+    def follow_object(self, object_name="object", **kwargs):
+        """
+        Follow a moving object while maintaining safe distance.
+        """
+        print(f"Following: {object_name}")
+        
+        image_data = self.get_camera_image()
+        if not image_data:
+            return {"status": "error", "message": "Could not capture image for following"}
+        
+        command = f"Follow {object_name} while maintaining a safe distance"
+        return self.execute_vision_guided_command(command, image_data)
+    
+    def inspect_area(self, area_description="area", **kwargs):
+        """
+        Inspect a specific area by moving around it.
+        """
+        print(f"Inspecting: {area_description}")
+        
+        image_data = self.get_camera_image()
+        if not image_data:
+            return {"status": "error", "message": "Could not capture image for inspection"}
+        
+        command = f"Inspect the {area_description} by moving around to get different viewing angles"
+        return self.execute_vision_guided_command(command, image_data)

@@ -8,3 +8,8 @@ torch
 pydub
 opencv-python-headless
 msgpack-rpc-python
+accelerate
+bitsandbytes
+pillow
+requests
+torchvision

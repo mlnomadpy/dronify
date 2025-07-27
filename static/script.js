@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Initialize video feed monitoring
 function initializeVideoFeed() {
     const videoFeed = document.getElementById('video-feed');
+    let lastLoadTime = Date.now();
     
     // Update video resolution info when image loads
     videoFeed.onload = function() {
@@ -29,6 +30,7 @@ function initializeVideoFeed() {
         updateVideoInfo(this.naturalWidth, this.naturalHeight);
         updateFeedStatus('LIVE', false);
         videoRetryCount = 0; // Reset retry count on successful load
+        lastLoadTime = Date.now(); // Update last successful load time
     };
     
     // Handle video feed errors
@@ -40,10 +42,25 @@ function initializeVideoFeed() {
         if (videoRetryCount < maxVideoRetries) {
             setTimeout(() => {
                 videoRetryCount++;
+                addLogEntry('info', 'Video Feed', `Auto-retry attempt ${videoRetryCount}/${maxVideoRetries}`);
                 refreshVideoFeed();
             }, 3000 + (videoRetryCount * 2000)); // Increasing delay
+        } else {
+            addLogEntry('error', 'Video Feed', 'Maximum retry attempts reached. Use manual refresh.');
         }
     };
+    
+    // Monitor for stalled video feed (when image doesn't refresh)
+    setInterval(() => {
+        const timeSinceLastLoad = Date.now() - lastLoadTime;
+        
+        // If no new frame for more than 15 seconds, consider it stalled
+        if (timeSinceLastLoad > 15000 && videoRetryCount < maxVideoRetries) {
+            addLogEntry('warning', 'Video Feed', 'Feed appears stalled, attempting refresh...');
+            refreshVideoFeed();
+            lastLoadTime = Date.now(); // Prevent multiple rapid refreshes
+        }
+    }, 10000); // Check every 10 seconds
 }
 
 // Set up event listeners
@@ -52,6 +69,13 @@ function setupEventListeners() {
     document.getElementById('text-command').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             sendTextCommand();
+        }
+    });
+    
+    // Enter key for vision command input
+    document.getElementById('vision-command').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendVisionCommand();
         }
     });
     
@@ -70,35 +94,69 @@ async function checkConnectionStatus() {
         if (response.ok) {
             const data = await response.json();
             const isConnected = data.airsim_connection === 'Connected';
-            updateConnectionStatus(isConnected, data.airsim_connection, data.airsim_host);
+            const hasVisionModel = data.vision_language_model || false;
+            updateConnectionStatus(isConnected, data.airsim_connection, data.airsim_host, hasVisionModel);
         } else {
-            updateConnectionStatus(false, 'API Error', 'Unknown');
+            updateConnectionStatus(false, 'API Error', 'Unknown', false);
         }
     } catch (error) {
-        updateConnectionStatus(false, 'Connection Failed', 'Unknown');
+        updateConnectionStatus(false, 'Connection Failed', 'Unknown', false);
     }
 }
 
 // Update connection status display
-function updateConnectionStatus(isConnected, statusText, hostIp) {
+function updateConnectionStatus(isConnected, statusText, hostIp, hasVisionModel) {
     const statusElement = document.getElementById('connection-status');
     const statusContainer = document.getElementById('status');
     const hostInfo = document.getElementById('host-info');
     const airSimHost = document.getElementById('airsim-host');
     
+    // Update main status
     statusElement.textContent = statusText;
     
+    // Update host info
     if (hostIp && hostIp !== 'Unknown') {
-        airSimHost.textContent = hostIp;
+        let hostText = hostIp;
+        if (hasVisionModel) {
+            hostText += ' | Vision-AI: ✅';
+        } else {
+            hostText += ' | Vision-AI: ❌';
+        }
+        airSimHost.textContent = hostText;
         hostInfo.style.display = 'block';
     } else {
         hostInfo.style.display = 'none';
     }
     
+    // Update connection styling
     if (isConnected) {
         statusContainer.className = 'status connected';
     } else {
         statusContainer.className = 'status disconnected';
+    }
+    
+    // Enable/disable vision features based on model availability
+    updateVisionFeatureAvailability(hasVisionModel);
+}
+
+// Update vision feature availability in UI
+function updateVisionFeatureAvailability(hasVisionModel) {
+    const visionPanel = document.querySelector('.control-panel:has(#vision-command)');
+    const visionRecordBtn = document.getElementById('vision-record-btn');
+    const visionCommandInput = document.getElementById('vision-command');
+    
+    if (visionPanel) {
+        if (hasVisionModel) {
+            visionPanel.style.opacity = '1';
+            visionPanel.style.pointerEvents = 'auto';
+            if (visionRecordBtn) visionRecordBtn.disabled = false;
+            if (visionCommandInput) visionCommandInput.disabled = false;
+        } else {
+            visionPanel.style.opacity = '0.5';
+            visionPanel.style.pointerEvents = 'none';
+            if (visionRecordBtn) visionRecordBtn.disabled = true;
+            if (visionCommandInput) visionCommandInput.disabled = true;
+        }
     }
 }
 
@@ -158,6 +216,37 @@ function refreshVideoFeed() {
     addLogEntry('info', 'Video Feed', 'Refreshing camera feed...');
 }
 
+// Refresh camera connection
+async function refreshCamera() {
+    updateFeedStatus('REFRESHING...', false);
+    addLogEntry('info', 'Camera', 'Refreshing camera connection...');
+    
+    try {
+        const response = await fetch('/refresh_camera', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.status === 'success') {
+            addLogEntry('success', 'Camera', 'Camera connection refreshed successfully');
+            // Refresh the video feed after successful camera refresh
+            setTimeout(() => {
+                refreshVideoFeed();
+            }, 1000);
+        } else {
+            addLogEntry('error', 'Camera', result.message || 'Failed to refresh camera');
+            updateFeedStatus('ERROR', true);
+        }
+    } catch (error) {
+        addLogEntry('error', 'Camera', `Network error: ${error.message}`);
+        updateFeedStatus('ERROR', true);
+    }
+}
+
 // Update video feed status
 function updateFeedStatus(statusText, isError) {
     const statusTextElement = document.getElementById('feed-status-text');
@@ -186,6 +275,38 @@ function checkVideoFeedHealth() {
     // If error is showing and we haven't exceeded retry limit, try refreshing
     if (videoError.style.display !== 'none' && videoRetryCount < maxVideoRetries) {
         refreshVideoFeed();
+    }
+}
+
+// Refresh camera connection
+async function refreshCamera() {
+    updateFeedStatus('REFRESHING...', false);
+    addLogEntry('info', 'Camera Refresh', 'Refreshing camera connection...');
+    
+    try {
+        const response = await fetch('/refresh_camera', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.status === 'success') {
+            addLogEntry('success', 'Camera Refresh', result.message);
+            // Reset retry count and refresh video feed
+            videoRetryCount = 0;
+            setTimeout(() => {
+                refreshVideoFeed();
+            }, 1000);
+        } else {
+            addLogEntry('error', 'Camera Refresh', result.message || 'Failed to refresh camera');
+            updateFeedStatus('ERROR', true);
+        }
+    } catch (error) {
+        addLogEntry('error', 'Camera Refresh', `Network error: ${error.message}`);
+        updateFeedStatus('ERROR', true);
     }
 }
 
@@ -227,6 +348,154 @@ async function sendTextCommand() {
 function sendQuickCommand(command) {
     document.getElementById('text-command').value = command;
     sendTextCommand();
+}
+
+// Send vision-guided text command
+async function sendVisionCommand() {
+    const commandInput = document.getElementById('vision-command');
+    const command = commandInput.value.trim();
+    
+    if (!command) {
+        addLogEntry('error', 'Vision Command', 'Please enter a vision command');
+        return;
+    }
+    
+    addLogEntry('info', 'Vision Command', `Analyzing scene and executing: "${command}"`);
+    
+    try {
+        const response = await fetch('/vision_command', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: command, use_current_image: true })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success' || result.status === 'partial') {
+            let message = result.message;
+            if (result.reasoning) {
+                message += `\nReasoning: ${result.reasoning}`;
+            }
+            if (result.planned_actions && result.planned_actions.length > 0) {
+                message += `\nActions executed: ${result.planned_actions.length}`;
+            }
+            addLogEntry('success', 'Vision Command', message);
+        } else {
+            addLogEntry('error', 'Vision Command', result.message || 'Command failed');
+        }
+        
+        commandInput.value = '';
+        
+    } catch (error) {
+        addLogEntry('error', 'Vision Command', 'Network error: ' + error.message);
+    }
+}
+
+// Send quick vision command
+function sendQuickVisionCommand(command) {
+    document.getElementById('vision-command').value = command;
+    sendVisionCommand();
+}
+
+// Vision recording variables
+let isVisionRecording = false;
+let visionMediaRecorder;
+let visionAudioChunks = [];
+
+// Toggle vision voice recording
+async function toggleVisionRecording() {
+    if (!isVisionRecording) {
+        await startVisionRecording();
+    } else {
+        await stopVisionRecording();
+    }
+}
+
+// Start vision voice recording
+async function startVisionRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        visionMediaRecorder = new MediaRecorder(stream);
+        visionAudioChunks = [];
+        
+        visionMediaRecorder.ondataavailable = event => {
+            visionAudioChunks.push(event.data);
+        };
+        
+        visionMediaRecorder.onstop = () => {
+            const audioBlob = new Blob(visionAudioChunks, { type: 'audio/wav' });
+            sendVisionAudioCommand(audioBlob);
+        };
+        
+        visionMediaRecorder.start();
+        isVisionRecording = true;
+        
+        // Update UI
+        document.getElementById('vision-record-btn').textContent = '🛑 Stop Vision Recording';
+        document.getElementById('vision-recording-status').style.display = 'block';
+        document.getElementById('recording-status').style.display = 'none'; // Hide regular recording
+        
+        addLogEntry('info', 'Vision Voice', 'Recording started for vision analysis...');
+        
+    } catch (error) {
+        addLogEntry('error', 'Vision Voice', 'Could not access microphone: ' + error.message);
+    }
+}
+
+// Stop vision voice recording
+async function stopVisionRecording() {
+    if (visionMediaRecorder && isVisionRecording) {
+        visionMediaRecorder.stop();
+        isVisionRecording = false;
+        
+        // Update UI
+        document.getElementById('vision-record-btn').textContent = '🎤👁️ Vision Voice';
+        document.getElementById('vision-recording-status').style.display = 'none';
+        
+        // Stop all audio tracks
+        visionMediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        addLogEntry('info', 'Vision Voice', 'Recording stopped, processing with vision analysis...');
+    }
+}
+
+// Send vision audio command
+async function sendVisionAudioCommand(audioBlob) {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'vision_command.wav');
+    
+    addLogEntry('info', 'Vision Voice', 'Analyzing audio and camera feed...');
+    
+    try {
+        const response = await fetch('/audio_vision_command', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success' || result.status === 'partial') {
+            let message = `Transcribed: "${result.transcribed_text}"`;
+            if (result.reasoning) {
+                message += `\nReasoning: ${result.reasoning}`;
+            }
+            if (result.planned_actions && result.planned_actions.length > 0) {
+                message += `\nActions executed: ${result.planned_actions.length}`;
+            }
+            addLogEntry('success', 'Vision Voice', message);
+        } else {
+            let errorMsg = result.message || 'Command failed';
+            if (result.transcribed_text) {
+                errorMsg = `Transcribed: "${result.transcribed_text}" - ${errorMsg}`;
+            }
+            addLogEntry('error', 'Vision Voice', errorMsg);
+        }
+        
+    } catch (error) {
+        addLogEntry('error', 'Vision Voice', 'Network error: ' + error.message);
+    }
 }
 
 // Toggle voice recording

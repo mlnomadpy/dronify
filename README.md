@@ -1,21 +1,37 @@
 # Dronify
 
-Dronify is a Flask-based REST API for controlling a multirotor drone in the AirSim simulator. It translates both text and audio commands into drone actions and streams live video from the drone’s camera.
+Dronify is an advanced Flask-based REST API for controlling a multirotor drone in the AirSim simulator. It combines traditional text/voice commands with cutting-edge vision-language AI to enable intelligent, context-aware drone control.
 
-## Key Features
+## ✨ Key Features
 
-- **RESTful Control:** Send text commands via JSON or upload audio files.
-- **Voice Commands:** `/audio_command` endpoint lets you control the drone with your voice.
-- **Live Video Stream:** `/video_feed` endpoint streams the drone’s front-facing camera as MJPEG, viewable in any browser.
-- **Offline Speech-to-Text:** Fast, local transcription using the Vosk toolkit.
-- **Intelligent Command Interpretation:** Hugging Face Transformer model maps natural language to drone actions (e.g., “fly forward” → move forward).
-- **Modular Design:** Flask web server is decoupled from AirSim control logic.
+- **🎯 Vision-Guided Control:** Advanced AI analyzes camera feed to plan intelligent actions
+- **🗣️ Voice Commands:** Natural speech recognition with audio command processing  
+- **📹 Live Video Stream:** Real-time MJPEG camera feed viewable in any browser
+- **🧠 Intelligent Command Interpretation:** AI models map natural language to precise drone actions
+- **🎮 RESTful API:** Clean HTTP endpoints for text, audio, and vision-guided commands
+- **🌐 Web Interface:** Full-featured browser-based control panel
+- **🔧 Modular Design:** Decoupled components for easy customization and extension
+
+## 🚀 New: Vision-Language Integration
+
+Dronify now includes **LLaVA-1.5-7B** vision-language model for intelligent scene analysis:
+
+- **Smart Navigation:** "Navigate to the red building" → AI plans safe route
+- **Obstacle Avoidance:** "Move forward safely" → AI avoids detected obstacles  
+- **Object Search:** "Find people in the area" → AI controls camera and movement
+- **Contextual Landing:** "Land in the safest spot" → AI analyzes ground conditions
+
+[📖 Full Vision Guide →](VISION_GUIDE.md)
 
 ## Prerequisites
 
 - **Unreal Engine & AirSim:** Running AirSim environment required.
 - **Python:** Version 3.8 or newer.
 - **pip:** Python package installer.
+- **System Requirements:**
+  - **RAM:** 8GB minimum (16GB recommended for vision features)
+  - **GPU:** NVIDIA GPU with 6GB+ VRAM recommended for vision AI
+  - **Storage:** 15GB free space for AI models
 - **FFmpeg:** Required for audio file conversion.
   - Ubuntu/Debian: `sudo apt-get install ffmpeg`
   - macOS (Homebrew): `brew install ffmpeg`

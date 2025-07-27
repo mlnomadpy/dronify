@@ -36,7 +36,10 @@
                         <div class="error-content">
                             <h3>📷 Camera Feed Unavailable</h3>
                             <p>Make sure the drone simulator is running and connected.</p>
-                            <button onclick="refreshVideoFeed()" class="retry-btn">🔄 Retry</button>
+                            <div class="error-buttons">
+                                <button onclick="refreshVideoFeed()" class="retry-btn">🔄 Retry</button>
+                                <button onclick="refreshCamera()" class="retry-btn">📹 Refresh Camera</button>
+                            </div>
                         </div>
                     </div>
                     <div class="video-overlay">
@@ -83,15 +86,45 @@
                     </div>
                 </section>
 
+                <!-- Vision-Guided Commands -->
+                <section class="control-panel">
+                    <h3>🔍 Vision-Guided Commands</h3>
+                    <div class="command-input">
+                        <input type="text" id="vision-command" placeholder="Enter vision command (e.g., 'navigate to the red building', 'avoid obstacles and move forward')" />
+                        <button onclick="sendVisionCommand()">Send Vision Command</button>
+                    </div>
+                    <div class="quick-commands">
+                        <h4>Vision Commands:</h4>
+                        <div class="button-grid">
+                            <button onclick="sendQuickVisionCommand('navigate to the nearest building')">Navigate to Building</button>
+                            <button onclick="sendQuickVisionCommand('avoid obstacles and move forward')">Safe Forward</button>
+                            <button onclick="sendQuickVisionCommand('search for people')">Search People</button>
+                            <button onclick="sendQuickVisionCommand('inspect this area')">Inspect Area</button>
+                            <button onclick="sendQuickVisionCommand('follow the moving object')">Follow Object</button>
+                            <button onclick="sendQuickVisionCommand('land in the safest spot visible')">Safe Landing</button>
+                        </div>
+                    </div>
+                    <p class="help-text">Vision commands analyze the camera feed to plan actions intelligently.</p>
+                </section>
+
                 <!-- Voice Commands -->
                 <section class="control-panel">
-                    <h3>Voice Commands</h3>
+                    <h3>🎤 Voice Commands</h3>
                     <div class="voice-controls">
-                        <button id="record-btn" onclick="toggleRecording()">🎤 Start Recording</button>
+                        <div class="voice-button-group">
+                            <button id="record-btn" onclick="toggleRecording()">🎤 Start Recording</button>
+                            <button id="vision-record-btn" onclick="toggleVisionRecording()">🎤👁️ Vision Voice</button>
+                        </div>
                         <div id="recording-status" style="display: none;">
                             <span class="recording-indicator">● Recording...</span>
                         </div>
-                        <p class="help-text">Click to start recording, speak your command, then click again to stop and send.</p>
+                        <div id="vision-recording-status" style="display: none;">
+                            <span class="recording-indicator">● Recording for Vision Analysis...</span>
+                        </div>
+                        <p class="help-text">
+                            Regular voice: Commands like "take off", "move forward"<br>
+                            Vision voice: Commands that analyze camera feed like "navigate to the building"
+                        </p>
                     </div>
                 </section>
             </div>
